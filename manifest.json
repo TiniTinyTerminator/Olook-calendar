@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "ttt.olook-calendar",
+  "name": "Olook Calendar",
+  "version": "1.0.0",
+  "author": "TiniTinyTerminator",
+  "license": "MIT",
+  "description": "What is on today, in the bar: the next appointment beside the clock and an agenda behind it, from the same calendars Olook reads.",
+  "kinds": ["bar-widget"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Olook Calendar",
+    "description": "The next appointment in the bar, and today and tomorrow behind it.",
+    "category": "Productivity",
+    "aliases": ["calendar", "agenda", "appointments", "olook-calendar"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 300,
+      "showNextInBar": true,
+      "daysAhead": 2
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Re-read the calendar every (seconds)",
+        "min": 60,
+        "max": 3600,
+        "step": 60,
+        "defaultValue": 300
+      },
+      {
+        "key": "showNextInBar",
+        "type": "boolean",
+        "label": "Show the next appointment beside the icon",
+        "defaultValue": true
+      },
+      {
+        "key": "daysAhead",
+        "type": "integer",
+        "label": "Days of agenda in the panel",
+        "min": 1,
+        "max": 7,
+        "step": 1,
+        "defaultValue": 2
+      }
+    ]
+  }
+}
