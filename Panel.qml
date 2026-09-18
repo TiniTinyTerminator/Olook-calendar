@@ -30,8 +30,8 @@ Panel {
   readonly property string clockFormat: String(setting("format", "dddd HH:mm"))
   readonly property bool showNext: setting("showNextInBar", false) === true
   readonly property int daysAhead: {
-    var value = parseInt(String(setting("daysAhead", 2)), 10)
-    return isFinite(value) ? Math.max(1, Math.min(7, value)) : 2
+    var value = parseInt(String(setting("daysAhead", 7)), 10)
+    return isFinite(value) ? Math.max(1, Math.min(7, value)) : 7
   }
   readonly property int refreshSeconds: {
     var value = parseInt(String(setting("refreshIntervalSec", 300)), 10)
@@ -158,6 +158,7 @@ Panel {
 
   readonly property var nextEvent: root.upcoming.length > 0 ? root.upcoming[0] : null
 
+
   // Rows for the list: a heading per day, then that day's appointments. With
   // a day picked it is that day alone; otherwise it is what is coming.
   readonly property var agendaRows: {
@@ -267,8 +268,16 @@ Panel {
 
   function reload() {
     if (root.loading || root.cliPath.indexOf("bin/olook") === -1) return
+    // The month on screen, and always today through the days ahead too:
+    // what is coming up, the bar's label and the reminders all read from the
+    // same events, and browsing to March must not empty them.
     var from = root.gridStart()
     var to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 42)
+    var today = new Date(root.now.getFullYear(), root.now.getMonth(), root.now.getDate())
+    var ahead = new Date(today.getFullYear(), today.getMonth(),
+                         today.getDate() + root.daysAhead + 1)
+    if (today < from) from = today
+    if (ahead > to) to = ahead
     root.loading = true
     var process = readerComponent.createObject(root, {
       command: [root.cliPath, "--json", "calendar",
@@ -397,6 +406,79 @@ Panel {
   }
 
   // ----------------------------------------------------------------- panel
+  //
+  // Laid out like Omarchy's own clock popup, which this replaces: the date
+  // as a hero, the year's progress as the rule under it, a month grid with
+  // ISO week numbers down a gutter, and a rail of chevrons to step it. What
+  // this adds is below the grid -- the appointments -- in the same quiet
+  // small-caps voice, and a dot under each day that has something on.
+
+  readonly property int cellWidth: Style.space(50)
+  readonly property int cellHeight: Style.space(34)
+  readonly property int cellSpacing: Style.space(2)
+  readonly property int weekColumnWidth: Style.space(30)
+  readonly property int gutterWidth: Style.space(12)
+  readonly property int gridWidth: root.weekColumnWidth + root.gutterWidth
+    + 7 * root.cellWidth + 8 * root.cellSpacing
+
+  readonly property bool viewingThisMonth: root.viewYear === root.now.getFullYear()
+    && root.viewMonth === root.now.getMonth()
+
+  // Pinned to today rather than to the month on screen: browsing does not
+  // change how much of the year has gone.
+  readonly property real yearDone: {
+    var year = root.now.getFullYear()
+    var begin = new Date(year, 0, 1)
+    var days = (new Date(year + 1, 0, 1) - begin) / 86400000
+    var today = new Date(year, root.now.getMonth(), root.now.getDate())
+    return Math.round((today - begin) / 86400000) / days
+  }
+
+  function isoWeek(date) {
+    // The Thursday of the date's week decides which year the week is in.
+    var thursday = new Date(date.getFullYear(), date.getMonth(),
+                            date.getDate() + 3 - (date.getDay() + 6) % 7)
+    var firstThursday = new Date(thursday.getFullYear(), 0, 4)
+    return 1 + Math.round(((thursday - firstThursday) / 86400000
+                           - 3 + (firstThursday.getDay() + 6) % 7) / 7)
+  }
+
+  readonly property var weeks: {
+    var out = []
+    for (var row = 0; row < 6; row++) {
+      var days = root.monthCells.slice(row * 7, row * 7 + 7)
+      var parts = days[0].key.split("-")
+      out.push({
+        "week": root.isoWeek(new Date(Number(parts[0]), Number(parts[1]) - 1,
+                                      Number(parts[2]))),
+        "days": days
+      })
+    }
+    return out
+  }
+
+  function stepYear(direction) { root.step(12 * direction) }
+
+  // Measured out here rather than read off the hero itself, which does not
+  // exist until the popup is first built -- and a width of nothing then is
+  // a popup that never shows.
+  TextMetrics {
+    id: heroMetrics
+    font.family: root.fontFamily
+    font.pixelSize: 48
+    font.bold: true
+    text: Qt.formatDate(root.now, "MMMM d")
+  }
+  TextMetrics {
+    id: heroGlyphMetrics
+    font.family: root.fontFamily
+    font.pixelSize: 44
+    text: "󰃭"
+  }
+  readonly property real heroWidth: heroMetrics.advanceWidth
+    + heroGlyphMetrics.advanceWidth + Style.space(20)
+
+  function smallCaps(text) { return String(text).toUpperCase() }
 
   KeyboardPanel {
     id: panel
@@ -404,315 +486,530 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
+    centerOnBar: true
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(330))
-    contentHeight: panel.fittedContentHeight(
-      headerColumn.implicitHeight + gridColumn.implicitHeight
-      + listColumn.implicitHeight + Style.space(38), Style.space(560))
+    // Wide enough for the hero date as well as the grid, with room either
+    // side for the chevrons that sit on the grid's edges.
+    contentWidth: panel.fittedContentWidth(
+      Math.max(root.gridWidth, root.heroWidth) + Style.space(40))
+    contentHeight: panel.fittedContentHeight(pageColumn.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
       onCloseRequested: root.close()
       onTabRequested: function (direction) { root.switchPanel(direction) }
-      onMoveRequested: function (dx, dy) { if (dx !== 0) root.step(dx) }
+      onActivateRequested: root.goToday()
+      onMoveRequested: function (dx, dy) {
+        if (dx !== 0) root.step(dx)
+        if (dy !== 0) root.stepYear(dy)
+      }
       onTextKey: function (text) {
-        if (text === "r" || text === "R") root.reload()
+        if (text === "[") root.step(-1)
+        else if (text === "]") root.step(1)
+        else if (text === "{") root.stepYear(-1)
+        else if (text === "}") root.stepYear(1)
         else if (text === "t" || text === "T") root.goToday()
+        else if (text === "r" || text === "R") root.reload()
         else if (text === "o" || text === "O") root.openCalendar()
       }
 
       Column {
-        id: headerColumn
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.right: parent.right
-        spacing: Style.space(10)
+        id: pageColumn
+        width: parent.width
+        spacing: Style.space(8)
 
+        // ---- Hero: today. Once the month has been stepped away from it is
+        //      also the way back.
         Item {
           width: parent.width
-          height: Style.space(24)
-
-          Text {
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.monthNames[root.viewMonth] + " " + root.viewYear
-            color: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-          }
+          height: heroRow.height
 
           Row {
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(2)
+            id: heroRow
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Style.space(20)
 
-            StepChip { glyph: "󰅁"; onTriggered: root.step(-1) }
-            StepChip { glyph: "󰃰"; onTriggered: root.goToday() }
-            StepChip { glyph: "󰅂"; onTriggered: root.step(1) }
+            Text {
+              anchors.baseline: heroDate.baseline
+              text: "󰃭"
+              color: heroMouse.containsMouse
+                ? Style.hoverStateColor(root.foreground, Color.accent) : root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: 44
+            }
+
+            Text {
+              id: heroDate
+              textFormat: Text.PlainText
+              text: Qt.formatDate(root.now, "MMMM d")
+              color: heroMouse.containsMouse
+                ? Style.hoverStateColor(root.foreground, Color.accent) : root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: 48
+              font.bold: true
+            }
+          }
+
+          MouseArea {
+            id: heroMouse
+            x: heroRow.x
+            y: heroRow.y
+            width: heroRow.width
+            height: heroRow.height
+            enabled: !root.viewingThisMonth || root.selectedDay !== ""
+            hoverEnabled: enabled
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.goToday()
+
+            PanelToolTip {
+              visible: heroMouse.containsMouse
+              text: "Back to today"
+              fontFamily: root.fontFamily
+            }
           }
         }
 
-        PanelSeparator { foreground: root.foreground }
-      }
-
-      // ------------------------------------------------------- month grid
-      Column {
-        id: gridColumn
-        anchors.top: headerColumn.bottom
-        anchors.topMargin: Style.space(8)
-        anchors.left: parent.left
-        anchors.right: parent.right
-        spacing: Style.space(2)
-
-        Row {
+        // ---- The year so far, as the rule under the hero.
+        Item {
           width: parent.width
+          height: yearBlock.y + yearBlock.height
 
-          Repeater {
-            model: root.weekdayNames
+          Item {
+            id: yearBlock
+            y: Style.space(4)
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: root.gridWidth
+            height: Math.max(yearLabel.implicitHeight, Style.space(10))
 
-            Item {
-              required property string modelData
-              width: gridColumn.width / 7
-              height: Style.space(16)
+            Text {
+              id: yearLabel
+              textFormat: Text.PlainText
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.now.getFullYear()
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              font.letterSpacing: 1
+            }
+
+            Text {
+              id: yearPercent
+              textFormat: Text.PlainText
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              text: Math.floor(root.yearDone * 100) + "%"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Rectangle {
+              anchors.left: yearLabel.right
+              anchors.right: yearPercent.left
+              anchors.leftMargin: Style.space(12)
+              anchors.rightMargin: Style.space(12)
+              anchors.verticalCenter: parent.verticalCenter
+              height: Style.space(6)
+              radius: Style.cornerRadius > 0 ? height / 2 : 0
+              color: Util.alpha(root.foreground, 0.12)
+
+              Rectangle {
+                width: Math.round(parent.width * root.yearDone)
+                height: parent.height
+                radius: parent.radius
+                color: Style.selectedStateColor(root.foreground, Color.accent)
+              }
+            }
+          }
+        }
+
+        // ---- The month: week numbers, a gutter, then seven days. Always
+        //      six rows, so the popup does not change height with the month.
+        Item {
+          width: parent.width
+          height: gridColumn.y + gridColumn.height
+
+          WheelHandler {
+            onWheel: function (event) {
+              if (event.angleDelta.y === 0) return
+              root.step(event.angleDelta.y > 0 ? -1 : 1)
+            }
+          }
+
+          Column {
+            id: gridColumn
+            y: Style.space(14)
+            anchors.horizontalCenter: parent.horizontalCenter
+            spacing: Style.space(3)
+
+            Row {
+              id: headerRow
+              spacing: root.cellSpacing
 
               Text {
-                anchors.centerIn: parent
-                text: parent.modelData.charAt(0)
+                width: root.weekColumnWidth
+                height: Style.space(16)
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                text: "W"
                 color: root.faint
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+                font.letterSpacing: 1
+                font.bold: true
               }
-            }
-          }
-        }
 
-        Grid {
-          width: parent.width
-          columns: 7
+              Item { width: root.gutterWidth; height: Style.space(16) }
 
-          Repeater {
-            model: root.monthCells
-
-            Item {
-              id: cell
-              required property var modelData
-              width: gridColumn.width / 7
-              height: Style.space(26)
-
-              readonly property bool isToday: modelData.key === root.todayKey
-              readonly property bool isPicked: modelData.key === root.selectedDay
-              readonly property int count: root.eventsOn(modelData.key).length
-
-              Rectangle {
-                anchors.centerIn: parent
-                width: Style.space(22)
-                height: Style.space(20)
-                radius: Style.cornerRadius
-                color: cell.isToday ? Color.accent
-                  : (cell.isPicked ? Util.alpha(root.foreground, 0.16)
-                                   : (cellHover.containsMouse
-                                      ? Util.alpha(root.foreground, 0.08)
-                                      : "transparent"))
+              Repeater {
+                model: root.weekdayNames
 
                 Text {
-                  anchors.centerIn: parent
-                  text: String(cell.modelData.number)
-                  color: cell.isToday ? Color.popups.background
-                    : (cell.modelData.outside ? root.faint : root.foreground)
+                  required property string modelData
+                  textFormat: Text.PlainText
+                  width: root.cellWidth
+                  height: Style.space(16)
+                  horizontalAlignment: Text.AlignHCenter
+                  verticalAlignment: Text.AlignVCenter
+                  text: root.smallCaps(modelData)
+                  color: root.dim
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
-                  font.bold: cell.isToday
+                  font.letterSpacing: 1
+                  font.bold: true
                 }
-              }
-
-              // One dot means something is on; the day itself says what.
-              Rectangle {
-                visible: cell.count > 0 && !cell.isToday
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: Style.space(1)
-                width: Style.space(4)
-                height: width
-                radius: width / 2
-                color: cell.modelData.outside ? root.faint : Color.accent
-              }
-
-              MouseArea {
-                id: cellHover
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.selectedDay =
-                  (root.selectedDay === cell.modelData.key) ? "" : cell.modelData.key
               }
             }
-          }
-        }
-      }
-
-      // ---------------------------------------------------------- the list
-      Column {
-        id: listColumn
-        anchors.top: gridColumn.bottom
-        anchors.topMargin: Style.space(10)
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        spacing: Style.space(6)
-
-        PanelSeparator { foreground: root.foreground }
-
-        Text {
-          width: parent.width
-          visible: root.trouble !== ""
-          textFormat: Text.PlainText
-          wrapMode: Text.Wrap
-          text: root.trouble
-          color: root.urgent
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-
-        Text {
-          width: parent.width
-          visible: root.trouble === "" && root.agendaRows.length === 0
-          textFormat: Text.PlainText
-          wrapMode: Text.Wrap
-          text: root.loading ? "Reading the calendar…"
-            : (root.selectedDay !== "" ? "Nothing on that day"
-                                       : "Nothing coming up")
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-
-        Flickable {
-          id: agendaFlick
-          width: parent.width
-          height: parent.height - y
-          contentWidth: width
-          contentHeight: agendaColumn.implicitHeight
-          clip: true
-          boundsBehavior: Flickable.StopAtBounds
-
-          MomentumScroll { view: agendaFlick }
-
-          Column {
-            id: agendaColumn
-            width: agendaFlick.width
-            spacing: Style.space(3)
 
             Repeater {
-              model: root.agendaRows
+              model: root.weeks
 
-              Item {
-                id: agendaRow
+              Row {
                 required property var modelData
-                width: agendaColumn.width
-                implicitHeight: Style.space(19)
-                height: implicitHeight
-
-                Rectangle {
-                  anchors.fill: parent
-                  anchors.margins: -Style.space(1)
-                  radius: Style.cornerRadius
-                  visible: !!agendaRow.modelData.event && rowHover.containsMouse
-                  color: Util.alpha(root.foreground, 0.08)
-                }
+                spacing: root.cellSpacing
 
                 Text {
-                  anchors.verticalCenter: parent.verticalCenter
-                  visible: agendaRow.modelData.heading !== ""
-                  text: agendaRow.modelData.heading
+                  textFormat: Text.PlainText
+                  width: root.weekColumnWidth
+                  height: root.cellHeight
+                  horizontalAlignment: Text.AlignHCenter
+                  verticalAlignment: Text.AlignVCenter
+                  text: modelData.week
                   color: root.faint
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                 }
 
-                Row {
-                  visible: !!agendaRow.modelData.event
-                  anchors.fill: parent
-                  spacing: Style.space(7)
+                Item { width: root.gutterWidth; height: root.cellHeight }
+
+                Repeater {
+                  model: modelData.days
 
                   Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Style.space(3)
-                    height: Style.space(13)
-                    radius: Style.space(2)
-                    color: (agendaRow.modelData.event
-                            && agendaRow.modelData.event.colour)
-                      ? agendaRow.modelData.event.colour : root.foreground
-                  }
+                    id: cell
+                    required property var modelData
+                    required property int index
+                    readonly property bool isToday: modelData.key === root.todayKey
+                    readonly property bool isPicked: modelData.key === root.selectedDay
+                    readonly property bool weekend: index >= 5
+                    readonly property int count: root.eventsOn(modelData.key).length
 
-                  Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: Style.space(42)
-                    textFormat: Text.PlainText
-                    elide: Text.ElideRight
-                    text: agendaRow.modelData.event
-                      ? (agendaRow.modelData.event.allDay
-                         ? "all day" : root.clockOf(agendaRow.modelData.event))
-                      : ""
-                    color: root.dim
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                  }
+                    width: root.cellWidth
+                    height: root.cellHeight
+                    radius: Style.cornerRadius
+                    // Today is outlined, not filled, as the clock has it; a
+                    // picked day gets the soft fill a hover would.
+                    color: cell.isPicked ? Style.hoverFillFor(root.foreground, Color.accent)
+                      : (cellMouse.containsMouse ? Util.alpha(root.foreground, 0.06)
+                                                 : "transparent")
+                    border.width: cell.isToday ? Style.spacing.hairline : 0
+                    border.color: Style.normalBorderFor(root.foreground, Color.accent)
 
-                  Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width - Style.space(59)
-                    textFormat: Text.PlainText
-                    elide: Text.ElideRight
-                    text: agendaRow.modelData.event
-                      ? (agendaRow.modelData.event.summary || "(no title)") : ""
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
+                    Text {
+                      textFormat: Text.PlainText
+                      anchors.centerIn: parent
+                      anchors.verticalCenterOffset: cell.count > 0 ? -Style.space(3) : 0
+                      text: cell.modelData.number
+                      color: cell.modelData.outside ? root.faint
+                        : (cell.weekend ? Qt.darker(root.foreground, 1.45) : root.foreground)
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.body
+                      font.bold: cell.isToday
+                    }
+
+                    // Something is on that day; the list below says what.
+                    Rectangle {
+                      visible: cell.count > 0
+                      anchors.horizontalCenter: parent.horizontalCenter
+                      anchors.bottom: parent.bottom
+                      anchors.bottomMargin: Style.space(5)
+                      width: Style.space(4)
+                      height: width
+                      radius: width / 2
+                      color: cell.modelData.outside ? root.faint : Color.accent
+                    }
+
+                    MouseArea {
+                      id: cellMouse
+                      anchors.fill: parent
+                      hoverEnabled: true
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.selectedDay =
+                        (root.selectedDay === cell.modelData.key) ? "" : cell.modelData.key
+                    }
                   }
                 }
+              }
+            }
+          }
+
+          // Hairline down the week-number gutter, beside the day rows only.
+          Rectangle {
+            x: gridColumn.x + root.weekColumnWidth + root.cellSpacing
+               + Math.round((root.gutterWidth - width) / 2)
+            y: gridColumn.y + headerRow.height + gridColumn.spacing
+            width: Style.spacing.hairline
+            height: gridColumn.height - headerRow.height - gridColumn.spacing
+            color: root.foreground
+            opacity: 0.1
+          }
+        }
+
+        // ---- Month stepping, spanning the grid it drives.
+        Item {
+          width: parent.width
+          height: monthNav.height
+
+          Item {
+            id: monthNav
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: root.gridWidth
+            height: monthLabel.implicitHeight + Style.space(10)
+
+            Text {
+              id: monthLabel
+              textFormat: Text.PlainText
+              anchors.centerIn: parent
+              width: Style.space(130)
+              horizontalAlignment: Text.AlignHCenter
+              text: root.smallCaps(root.monthNames[root.viewMonth] + " " + root.viewYear)
+              color: Qt.darker(root.foreground, 1.4)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              font.letterSpacing: 1
+            }
+
+            PanelActionButton {
+              anchors.left: parent.left
+              anchors.leftMargin: -Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              iconText: "󰅁"
+              tooltipText: "Previous month"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: root.step(-1)
+            }
+
+            PanelActionButton {
+              anchors.right: parent.right
+              anchors.rightMargin: -Style.space(8)
+              anchors.verticalCenter: parent.verticalCenter
+              iconText: "󰅂"
+              tooltipText: "Next month"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: root.step(1)
+            }
+          }
+        }
+
+        // ---- What is on: the day picked in the grid, or what is coming.
+        Item {
+          width: parent.width
+          height: agendaBlock.height
+
+          Column {
+            id: agendaBlock
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: root.gridWidth
+            spacing: Style.space(6)
+
+            Rectangle {
+              width: parent.width
+              height: Style.spacing.hairline
+              color: root.foreground
+              opacity: 0.1
+            }
+
+            Item {
+              width: parent.width
+              height: agendaTitle.implicitHeight
+
+              Text {
+                id: agendaTitle
+                textFormat: Text.PlainText
+                anchors.left: parent.left
+                text: root.smallCaps(root.selectedDay !== ""
+                                     ? root.headingFor(root.selectedDay) : "Coming up")
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.letterSpacing: 1
+                font.bold: true
+              }
+
+              Text {
+                id: openAll
+                textFormat: Text.PlainText
+                anchors.right: parent.right
+                text: root.smallCaps("Open calendar")
+                color: openAllMouse.containsMouse
+                  ? Style.hoverStateColor(root.foreground, Color.accent) : root.faint
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.letterSpacing: 1
 
                 MouseArea {
-                  id: rowHover
+                  id: openAllMouse
                   anchors.fill: parent
-                  hoverEnabled: !!agendaRow.modelData.event
-                  cursorShape: agendaRow.modelData.event
-                    ? Qt.PointingHandCursor : Qt.ArrowCursor
-                  onClicked: if (agendaRow.modelData.event)
-                    root.openCalendar(agendaRow.modelData.event)
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.openCalendar()
+                }
+              }
+            }
+
+            Text {
+              width: parent.width
+              visible: root.trouble !== ""
+              textFormat: Text.PlainText
+              wrapMode: Text.Wrap
+              text: root.trouble
+              color: root.urgent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              width: parent.width
+              visible: root.trouble === "" && root.agendaRows.length === 0
+              textFormat: Text.PlainText
+              text: root.loading ? "Reading the calendar…"
+                : (root.selectedDay !== "" ? "Nothing on that day" : "Nothing coming up")
+              color: root.faint
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+
+            Flickable {
+              id: agendaFlick
+              width: parent.width
+              height: Math.min(agendaColumn.implicitHeight, Style.space(190))
+              contentWidth: width
+              contentHeight: agendaColumn.implicitHeight
+              clip: true
+              boundsBehavior: Flickable.StopAtBounds
+              interactive: contentHeight > height
+
+              MomentumScroll { view: agendaFlick }
+
+              Column {
+                id: agendaColumn
+                width: agendaFlick.width
+                spacing: Style.space(2)
+
+                Repeater {
+                  // With one day picked its heading is already the title.
+                  model: root.selectedDay !== ""
+                    ? root.agendaRows.filter(function (row) { return !!row.event })
+                    : root.agendaRows
+
+                  Item {
+                    id: agendaRow
+                    required property var modelData
+                    readonly property var event: modelData.event
+                    width: agendaColumn.width
+                    height: event ? Style.space(26) : Style.space(24)
+
+                    Text {
+                      visible: !agendaRow.event
+                      anchors.left: parent.left
+                      anchors.bottom: parent.bottom
+                      anchors.bottomMargin: Style.space(3)
+                      textFormat: Text.PlainText
+                      text: root.smallCaps(agendaRow.modelData.heading)
+                      color: root.faint
+                      font.family: root.fontFamily
+                      font.pixelSize: Style.font.caption
+                      font.letterSpacing: 1
+                    }
+
+                    Rectangle {
+                      visible: !!agendaRow.event
+                      anchors.fill: parent
+                      radius: Style.cornerRadius
+                      color: rowMouse.containsMouse
+                        ? Style.hoverFillFor(root.foreground, Color.accent) : "transparent"
+
+                      Row {
+                        anchors.left: parent.left
+                        anchors.leftMargin: Style.space(6)
+                        anchors.right: parent.right
+                        anchors.rightMargin: Style.space(6)
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Style.space(10)
+
+                        Rectangle {
+                          anchors.verticalCenter: parent.verticalCenter
+                          width: Style.space(3)
+                          height: Style.space(15)
+                          radius: Style.space(2)
+                          color: agendaRow.event && agendaRow.event.colour
+                            ? agendaRow.event.colour : Color.accent
+                        }
+
+                        Text {
+                          anchors.verticalCenter: parent.verticalCenter
+                          width: Style.space(48)
+                          textFormat: Text.PlainText
+                          text: agendaRow.event
+                            ? (agendaRow.event.allDay ? "all day" : root.clockOf(agendaRow.event))
+                            : ""
+                          color: root.dim
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.bodySmall
+                        }
+
+                        Text {
+                          anchors.verticalCenter: parent.verticalCenter
+                          width: parent.width - Style.space(81)
+                          textFormat: Text.PlainText
+                          elide: Text.ElideRight
+                          text: agendaRow.event
+                            ? (agendaRow.event.summary || "(no title)") : ""
+                          color: root.foreground
+                          font.family: root.fontFamily
+                          font.pixelSize: Style.font.bodySmall
+                        }
+                      }
+
+                      MouseArea {
+                        id: rowMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openCalendar(agendaRow.event)
+                      }
+                    }
+                  }
                 }
               }
             }
           }
         }
       }
-    }
-  }
-
-  component StepChip: Rectangle {
-    id: chip
-    property string glyph: ""
-    signal triggered()
-
-    width: Style.space(20)
-    height: Style.space(20)
-    radius: Style.cornerRadius
-    color: chipHover.containsMouse ? Util.alpha(root.foreground, 0.10) : "transparent"
-
-    Text {
-      anchors.centerIn: parent
-      text: chip.glyph
-      color: root.dim
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-    }
-
-    MouseArea {
-      id: chipHover
-      anchors.fill: parent
-      hoverEnabled: true
-      cursorShape: Qt.PointingHandCursor
-      onClicked: chip.triggered()
     }
   }
 

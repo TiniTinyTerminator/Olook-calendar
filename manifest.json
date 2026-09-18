@@ -29,7 +29,7 @@
     "defaults": {
       "refreshIntervalSec": 300,
       "showNextInBar": false,
-      "daysAhead": 2,
+      "daysAhead": 7,
       "format": "dddd HH:mm",
       "remindMinutes": 15
     },
