@@ -339,9 +339,17 @@ Panel {
     root.reload()
   }
 
-  function openCalendar() {
+  // Opening the calendar, on an appointment when there is one to open. The
+  // panel has room for a name and a time; everything else an appointment
+  // carries is in the window.
+  function openCalendar(event) {
     root.close()
-    var payload = JSON.stringify({ "view": "calendar" })
+    var target = { "view": "calendar" }
+    if (event) {
+      target.day = String(event.day || "")
+      target.eventUid = String(event.uid || "")
+    }
+    var payload = JSON.stringify(target)
     if (bar && bar.shell && typeof bar.shell.summon === "function") {
       bar.shell.summon("ttt.olook", payload)
       return
@@ -654,7 +662,8 @@ Panel {
                   hoverEnabled: !!agendaRow.modelData.event
                   cursorShape: agendaRow.modelData.event
                     ? Qt.PointingHandCursor : Qt.ArrowCursor
-                  onClicked: if (agendaRow.modelData.event) root.openCalendar()
+                  onClicked: if (agendaRow.modelData.event)
+                    root.openCalendar(agendaRow.modelData.event)
                 }
               }
             }
