@@ -339,15 +339,31 @@ Panel {
     root.reload()
   }
 
-  // Opening the calendar, on an appointment when there is one to open. The
-  // panel has room for a name and a time; everything else an appointment
-  // carries is in the window.
+  // An appointment opens in a window of its own, the way the mail widget
+  // opens a message -- not the whole client. Everything the window shows is
+  // already here, so it travels with the request rather than being looked up
+  // again at the other end. With no appointment, the calendar itself opens.
   function openCalendar(event) {
     root.close()
     var target = { "view": "calendar" }
     if (event) {
-      target.day = String(event.day || "")
-      target.eventUid = String(event.uid || "")
+      target = {
+        "popout": true,
+        "event": {
+          "uid": String(event.uid || ""),
+          "day": String(event.day || ""),
+          "summary": String(event.summary || ""),
+          "location": String(event.location || ""),
+          "description": String(event.description || ""),
+          "organiser": String(event.organiser || ""),
+          "calendarName": String(event.calendarName || ""),
+          "colour": String(event.colour || ""),
+          "start": Number(event.start || 0),
+          "end": Number(event.end || 0),
+          "allDay": event.allDay === true,
+          "recurring": event.recurring === true
+        }
+      }
     }
     // Through the shell's own command rather than bar.shell.summon. A
     // plugin's shell handle is scoped to that plugin: the call is there and
