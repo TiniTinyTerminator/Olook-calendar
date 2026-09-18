@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "TiniTinyTerminator",
   "license": "MIT",
-  "description": "The clock and the calendar in one: date and time in the bar, a month marked with the days you have something on, and the agenda behind it. Replaces Omarchy's clock.",
+  "description": "The clock and the calendar in one: date and time in the bar, a month marked with the days you have something on, the agenda behind it, and a notification before an appointment starts.",
   "kinds": [
     "bar-widget"
   ],
@@ -15,7 +15,7 @@
   },
   "barWidget": {
     "displayName": "Olook Clock & Calendar",
-    "description": "Date and time, a marked month, and what is coming up.",
+    "description": "Date and time, a marked month, what is coming up, and a nudge before it does.",
     "category": "Time",
     "aliases": [
       "calendar",
@@ -28,9 +28,10 @@
     "defaultSection": "right",
     "defaults": {
       "refreshIntervalSec": 300,
-      "showNextInBar": true,
+      "showNextInBar": false,
       "daysAhead": 2,
-      "format": "dddd HH:mm"
+      "format": "dddd HH:mm",
+      "remindMinutes": 15
     },
     "schema": [
       {
@@ -52,8 +53,9 @@
       {
         "key": "showNextInBar",
         "type": "boolean",
-        "label": "Show the next appointment beside the icon",
-        "defaultValue": true
+        "label": "Show the next appointment in the bar too",
+        "defaultValue": false,
+        "description": "Off by default: beside the clock, a bare time reads as a second clock."
       },
       {
         "key": "daysAhead",
@@ -63,6 +65,16 @@
         "max": 7,
         "step": 1,
         "defaultValue": 2
+      },
+      {
+        "key": "remindMinutes",
+        "type": "integer",
+        "label": "Remind me this many minutes before",
+        "min": 0,
+        "max": 120,
+        "step": 5,
+        "defaultValue": 15,
+        "description": "0 turns reminders off. All-day entries are never reminded about."
       }
     ]
   }

@@ -28,7 +28,7 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property string clockFormat: String(setting("format", "dddd HH:mm"))
-  readonly property bool showNext: setting("showNextInBar", true) !== false
+  readonly property bool showNext: setting("showNextInBar", false) === true
   readonly property int daysAhead: {
     var value = parseInt(String(setting("daysAhead", 2)), 10)
     return isFinite(value) ? Math.max(1, Math.min(7, value)) : 2
@@ -77,8 +77,9 @@ Panel {
   readonly property string labelText: {
     var text = Qt.formatDateTime(root.now, root.clockFormat)
     if (!root.showNext || !root.nextEvent) return text
-    // A bare time next to the clock reads as a second clock, which is exactly
-    // how it was read. The glyph says which of the two is an appointment.
+    // Off by default: next to a clock a bare time reads as a second clock,
+    // and the glyph that says otherwise is still one more thing in the bar
+    // than most people want. What is next is a keystroke away in the panel.
     return text + "   " + String.fromCodePoint(0xF00F0) + " "
            + (root.nextEvent.allDay ? "all day" : root.clockOf(root.nextEvent))
   }
@@ -188,6 +189,80 @@ Panel {
            + " " + root.monthNames[when.getMonth()]
   }
 
+  // --------------------------------------------------------------- reminders
+
+  // Minutes before an appointment to say something; 0 is never.
+  readonly property int remindMinutes: {
+    var value = parseInt(String(setting("remindMinutes", 15)), 10)
+    return isFinite(value) ? Math.max(0, Math.min(120, value)) : 15
+  }
+
+  // One notification per appointment, and only from one screen's copy of the
+  // widget: the bar mounts one per monitor, and three monitors should not
+  // mean three reminders.
+  property var reminded: ({})
+
+  readonly property bool isPrimary: {
+    if (!bar || typeof bar.moduleWidgets !== "function") return true
+    var peers = bar.moduleWidgets(moduleName)
+    return !peers || peers.length === 0 || peers[0] === root
+  }
+
+  function checkReminders() {
+    if (root.remindMinutes <= 0 || !root.isPrimary) return
+    var now = Math.floor(Date.now() / 1000)
+    var horizon = now + root.remindMinutes * 60
+    for (var i = 0; i < root.events.length; i++) {
+      var event = root.events[i]
+      if (event.allDay) continue
+      var start = Number(event.start)
+      // Already started, or too far off to mention yet.
+      if (start <= now || start > horizon) continue
+      var key = String(event.uid || event.summary || "") + "@" + start
+      if (root.reminded[key]) continue
+      root.reminded[key] = true
+      root.announce(event, Math.max(1, Math.round((start - now) / 60)))
+    }
+  }
+
+  function announce(event, minutes) {
+    var when = minutes === 1 ? "in a minute" : "in " + minutes + " minutes"
+    var where = String(event.location || "")
+    var process = reminder.createObject(root, {
+      command: ["notify-send", "--app-name=Calendar", "--icon=office-calendar",
+                "--action=default=Open",
+                String(event.summary || "Appointment"),
+                root.clockOf(event) + " — " + when + (where !== "" ? "\n" + where : "")]
+    })
+    if (process) process.running = true
+  }
+
+  Component {
+    id: reminder
+
+    Process {
+      id: reminderProc
+      running: false
+      // notify-send stays alive until the notification is answered and
+      // prints the action that answered it, which is the only way to learn
+      // it was clicked.
+      stdout: SplitParser {
+        onRead: function (line) {
+          if (String(line).trim() !== "") root.openCalendar()
+        }
+      }
+      onExited: Qt.callLater(function () { reminderProc.destroy() })
+    }
+  }
+
+  Timer {
+    running: root.remindMinutes > 0
+    repeat: true
+    interval: 30000
+    triggeredOnStart: true
+    onTriggered: root.checkReminders()
+  }
+
   // ------------------------------------------------------------------ data
 
   function reload() {
@@ -195,31 +270,51 @@ Panel {
     var from = root.gridStart()
     var to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 42)
     root.loading = true
-    reader.command = [root.cliPath, "--json", "calendar",
-                      "--start", root.dayKey(from), "--end", root.dayKey(to)]
-    reader.running = true
+    var process = readerComponent.createObject(root, {
+      command: [root.cliPath, "--json", "calendar",
+                "--start", root.dayKey(from), "--end", root.dayKey(to)]
+    })
+    if (!process) {
+      root.loading = false
+      root.trouble = "Could not start the calendar engine."
+      return
+    }
+    process.running = true
   }
 
-  Process {
-    id: reader
-    running: false
-    stdout: StdioCollector {
-      onStreamFinished: {
+  // A process per read, made when the read starts, which is how Olook's own
+  // engine calls have always worked. A single Process declared here did
+  // start -- the command and `running` both took -- and then neither exited
+  // nor finished its stream, leaving `loading` true and every later read
+  // returning early at the guard.
+  Component {
+    id: readerComponent
+
+    Process {
+      id: proc
+      running: false
+      stdout: StdioCollector { id: procOut; waitForEnd: true }
+      stderr: StdioCollector { id: procErr; waitForEnd: true }
+
+      onExited: function (exitCode) {
         root.loading = false
         var payload = null
         try {
-          payload = JSON.parse(text)
+          payload = JSON.parse(String(procOut.text || ""))
         } catch (error) {
-          root.trouble = "The calendar could not be read."
+          root.trouble = String(procErr.text || "").trim()
+            || "The calendar could not be read."
+          Qt.callLater(function () { proc.destroy() })
           return
         }
         if (!payload || payload.ok === false) {
           root.trouble = String((payload && payload.error) || "")
           root.events = (payload && payload.events) || []
-          return
+        } else {
+          root.trouble = ""
+          root.events = payload.events || []
         }
-        root.trouble = ""
-        root.events = payload.events || []
+        Qt.callLater(function () { proc.destroy() })
       }
     }
   }
@@ -604,6 +699,18 @@ Panel {
     function refresh(): string { root.reload(); return "ok" }
     function next(): string {
       return root.nextEvent ? String(root.nextEvent.summary || "") : ""
+    }
+    // What the widget is working from, which is otherwise invisible from
+    // outside the shell. This is what found the read that never finished.
+    function status(): string {
+      return JSON.stringify({
+        "events": root.events.length,
+        "loading": root.loading,
+        "trouble": root.trouble,
+        "remindMinutes": root.remindMinutes,
+        "reminded": Object.keys(root.reminded).length,
+        "isPrimary": root.isPrimary
+      })
     }
   }
 }
