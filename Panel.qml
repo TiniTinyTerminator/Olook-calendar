@@ -76,10 +76,11 @@ Panel {
 
   readonly property string labelText: {
     var text = Qt.formatDateTime(root.now, root.clockFormat)
-    if (root.showNext && root.nextEvent)
-      text += "   " + (root.nextEvent.allDay ? "all day"
-                                             : root.clockOf(root.nextEvent))
-    return text
+    if (!root.showNext || !root.nextEvent) return text
+    // A bare time next to the clock reads as a second clock, which is exactly
+    // how it was read. The glyph says which of the two is an appointment.
+    return text + "   " + String.fromCodePoint(0xF00F0) + " "
+           + (root.nextEvent.allDay ? "all day" : root.clockOf(root.nextEvent))
   }
 
   // ------------------------------------------------------------- the month
