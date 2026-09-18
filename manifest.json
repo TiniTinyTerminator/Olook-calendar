@@ -5,25 +5,41 @@
   "version": "1.0.0",
   "author": "TiniTinyTerminator",
   "license": "MIT",
-  "description": "What is on today, in the bar: the next appointment beside the clock and an agenda behind it, from the same calendars Olook reads.",
-  "kinds": ["bar-widget"],
+  "description": "The clock and the calendar in one: date and time in the bar, a month marked with the days you have something on, and the agenda behind it. Replaces Omarchy's clock.",
+  "kinds": [
+    "bar-widget"
+  ],
   "keepLoaded": true,
   "entryPoints": {
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Olook Calendar",
-    "description": "The next appointment in the bar, and today and tomorrow behind it.",
-    "category": "Productivity",
-    "aliases": ["calendar", "agenda", "appointments", "olook-calendar"],
+    "displayName": "Olook Clock & Calendar",
+    "description": "Date and time, a marked month, and what is coming up.",
+    "category": "Time",
+    "aliases": [
+      "calendar",
+      "clock",
+      "agenda",
+      "appointments",
+      "olook-calendar"
+    ],
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
       "refreshIntervalSec": 300,
       "showNextInBar": true,
-      "daysAhead": 2
+      "daysAhead": 2,
+      "format": "dddd HH:mm"
     },
     "schema": [
+      {
+        "key": "format",
+        "type": "string",
+        "label": "Label format",
+        "defaultValue": "dddd HH:mm",
+        "description": "Qt date format, as the Omarchy clock uses: dddd HH:mm, d MMMM yyyy, HH:mm."
+      },
       {
         "key": "refreshIntervalSec",
         "type": "integer",
