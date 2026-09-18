@@ -349,13 +349,13 @@ Panel {
       target.day = String(event.day || "")
       target.eventUid = String(event.uid || "")
     }
-    var payload = JSON.stringify(target)
-    if (bar && bar.shell && typeof bar.shell.summon === "function") {
-      bar.shell.summon("ttt.olook", payload)
-      return
-    }
+    // Through the shell's own command rather than bar.shell.summon. A
+    // plugin's shell handle is scoped to that plugin: the call is there and
+    // takes the arguments, and summoning somebody else's overlay with it
+    // quietly does nothing. This is a different plugin asking for Olook's
+    // window, so it has to ask from outside.
     Quickshell.execDetached(["omarchy-shell", "shell", "summon",
-                             "ttt.olook", payload])
+                             "ttt.olook", JSON.stringify(target)])
   }
 
   // ------------------------------------------------------------------- bar
@@ -706,6 +706,13 @@ Panel {
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
     function refresh(): string { root.reload(); return "ok" }
+    // Exercises exactly what a click on an agenda row does, so a click that
+    // does nothing can be told apart from a summon that does nothing.
+    function openFirst(): string {
+      if (!root.nextEvent) return "nothing to open"
+      root.openCalendar(root.nextEvent)
+      return "asked for " + String(root.nextEvent.summary || "")
+    }
     function next(): string {
       return root.nextEvent ? String(root.nextEvent.summary || "") : ""
     }
