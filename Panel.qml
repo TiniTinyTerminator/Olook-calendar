@@ -6,10 +6,11 @@ import qs.Ui
 
 // The clock and the calendar in one bar widget.
 //
-// A second plugin rather than part of Olook's own widget, because a plugin
-// registers one bar widget and Olook's is the mail envelope. It reads through
-// the same engine as the Calendar tab, so the bar and the window cannot
-// disagree about what is on.
+// A plugin of its own rather than part of Olook, because a plugin registers
+// one bar widget and Olook's is the mail envelope -- and a repository of its
+// own, because `omarchy plugin add` installs one plugin per repository.
+// It reads through the same engine as the Calendar tab, so the bar and the
+// window cannot disagree about what is on.
 //
 // It replaces Omarchy's clock rather than sitting beside it: the label is the
 // date and time, and the popup is the month that clock was already showing,
@@ -311,8 +312,11 @@ Panel {
         try {
           payload = JSON.parse(String(procOut.text || ""))
         } catch (error) {
+          // Nothing at all back is the engine missing: this widget reads the
+          // calendar through Olook and cannot on its own.
           root.trouble = String(procErr.text || "").trim()
-            || "The calendar could not be read."
+            || "The calendar is read through Olook, which is not installed: "
+               + "omarchy plugin add https://github.com/TiniTinyTerminator/olook.git"
           Qt.callLater(function () { proc.destroy() })
           return
         }

@@ -25,7 +25,7 @@
       "olook-calendar"
     ],
     "allowMultiple": false,
-    "defaultSection": "right",
+    "defaultSection": "center",
     "defaults": {
       "refreshIntervalSec": 300,
       "showNextInBar": false,
