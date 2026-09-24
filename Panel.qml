@@ -59,6 +59,12 @@ Panel {
   readonly property var monthNames: ["January", "February", "March", "April",
     "May", "June", "July", "August", "September", "October", "November", "December"]
 
+  // Notification bodies are read as markup by the notification server.
+  function markupSafe(text) {
+    return String(text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+  }
+
   function pad(value) { return value < 10 ? "0" + value : String(value) }
 
   function dayKey(date) {
@@ -231,10 +237,13 @@ Panel {
     var when = minutes === 1 ? "in a minute" : "in " + minutes + " minutes"
     var where = String(event.location || "")
     var process = reminder.createObject(root, {
+      // "--" first, and the body escaped: the title and place come from
+      // whoever sent the invitation or published the calendar.
       command: ["notify-send", "--app-name=Calendar", "--icon=office-calendar",
-                "--action=default=Open",
+                "--action=default=Open", "--",
                 String(event.summary || "Appointment"),
-                root.clockOf(event) + " — " + when + (where !== "" ? "\n" + where : "")]
+                root.markupSafe(root.clockOf(event) + " — " + when
+                                + (where !== "" ? "\n" + where : ""))]
     })
     if (process) process.running = true
   }
@@ -535,6 +544,7 @@ Panel {
             spacing: Style.space(20)
 
             Text {
+              textFormat: Text.PlainText
               anchors.baseline: heroDate.baseline
               text: "󰃭"
               color: heroMouse.containsMouse
@@ -653,6 +663,7 @@ Panel {
               spacing: root.cellSpacing
 
               Text {
+                textFormat: Text.PlainText
                 width: root.weekColumnWidth
                 height: Style.space(16)
                 horizontalAlignment: Text.AlignHCenter
