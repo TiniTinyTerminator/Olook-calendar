@@ -10,6 +10,14 @@ It reads your calendars through [Olook](https://github.com/TiniTinyTerminator/ol
 so it shows whatever Olook has: Google, Microsoft, any CalDAV server, and
 `.ics` files or links. Clicking an appointment opens it in a window of its own.
 
+<p>
+  <img src="docs/bar-calendar.png" alt="The popup: today's date, the year's progress, a month with week numbers, and what is coming up" width="440">
+  <img src="docs/appointment.png" alt="An appointment opened from the popup, in a window of its own" width="400">
+</p>
+
+Screenshots are demo data, made with Olook's
+[`tools/screenshots.sh`](https://github.com/TiniTinyTerminator/olook/blob/master/tools/screenshots.sh).
+
 ## Install
 
 Olook first, then this:
