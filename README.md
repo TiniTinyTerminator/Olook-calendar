@@ -15,8 +15,7 @@ so it shows whatever Olook has: Google, Microsoft, any CalDAV server, and
   <img src="docs/appointment.png" alt="An appointment opened from the popup, in a window of its own" width="400">
 </p>
 
-Screenshots are demo data, made with Olook's
-[`tools/screenshots.sh`](https://github.com/TiniTinyTerminator/olook/blob/master/tools/screenshots.sh).
+The screenshots are demo data.
 
 ## Install
 
