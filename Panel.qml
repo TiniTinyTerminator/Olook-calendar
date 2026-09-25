@@ -216,10 +216,22 @@ Panel {
     return !peers || peers.length === 0 || peers[0] === root
   }
 
+  // Reminders are bounded. The events come from calendars other people
+  // publish, and each notification is a notify-send that lives until it is
+  // answered: a feed with hundreds of appointments in the next hour would
+  // otherwise start hundreds of processes and bury the desktop in popups.
+  // So a handful at most are alive at once, a burst of appointments becomes
+  // one summary, and every reminder lets go after ten minutes.
+  readonly property int maxLiveReminders: 3
+  readonly property int maxSeparateReminders: 3
+  readonly property int reminderLifetimeMs: 10 * 60 * 1000
+  property int liveReminders: 0
+
   function checkReminders() {
     if (root.remindMinutes <= 0 || !root.isPrimary) return
     var now = Math.floor(Date.now() / 1000)
     var horizon = now + root.remindMinutes * 60
+    var due = []
     for (var i = 0; i < root.events.length; i++) {
       var event = root.events[i]
       if (event.allDay) continue
@@ -228,24 +240,63 @@ Panel {
       if (start <= now || start > horizon) continue
       var key = String(event.uid || event.summary || "") + "@" + start
       if (root.reminded[key]) continue
-      root.reminded[key] = true
-      root.announce(event, Math.max(1, Math.round((start - now) / 60)))
+      root.reminded[key] = start
+      due.push(event)
     }
+    root.forgetOldReminders(now)
+    if (due.length === 0) return
+
+    var room = root.maxLiveReminders - root.liveReminders
+    if (room <= 0) return
+    if (due.length <= Math.min(room, root.maxSeparateReminders)) {
+      for (var j = 0; j < due.length; j++)
+        root.announce(due[j], Math.max(1, Math.round((Number(due[j].start) - now) / 60)))
+    } else {
+      root.announceMany(due, now)
+    }
+  }
+
+  // Keys for appointments that started over an hour ago will not come round
+  // again; without this the map grows for as long as the shell runs.
+  function forgetOldReminders(now) {
+    var kept = {}
+    for (var key in root.reminded)
+      if (Number(root.reminded[key]) > now - 3600) kept[key] = root.reminded[key]
+    root.reminded = kept
+  }
+
+  // One notification for a burst: the first appointment named, the rest
+  // counted.
+  function announceMany(events, now) {
+    events.sort(function (a, b) { return Number(a.start) - Number(b.start) })
+    var first = events[0]
+    var minutes = Math.max(1, Math.round((Number(first.start) - now) / 60))
+    var others = events.length - 1
+    root.notify(events.length + " appointments starting soon",
+                String(first.summary || "Appointment") + " — " + root.clockOf(first)
+                + (minutes === 1 ? ", in a minute" : ", in " + minutes + " minutes")
+                + "\nand " + others + (others === 1 ? " more" : " more"))
   }
 
   function announce(event, minutes) {
     var when = minutes === 1 ? "in a minute" : "in " + minutes + " minutes"
     var where = String(event.location || "")
+    root.notify(String(event.summary || "Appointment"),
+                root.clockOf(event) + " — " + when + (where !== "" ? "\n" + where : ""))
+  }
+
+  function notify(summary, body) {
+    if (root.liveReminders >= root.maxLiveReminders) return
     var process = reminder.createObject(root, {
       // "--" first, and the body escaped: the title and place come from
       // whoever sent the invitation or published the calendar.
       command: ["notify-send", "--app-name=Calendar", "--icon=office-calendar",
-                "--action=default=Open", "--",
-                String(event.summary || "Appointment"),
-                root.markupSafe(root.clockOf(event) + " — " + when
-                                + (where !== "" ? "\n" + where : ""))]
+                "--action=default=Open", "--", String(summary),
+                root.markupSafe(body)]
     })
-    if (process) process.running = true
+    if (!process) return
+    root.liveReminders += 1
+    process.running = true
   }
 
   Component {
@@ -262,7 +313,18 @@ Panel {
           if (String(line).trim() !== "") root.openCalendar()
         }
       }
-      onExited: Qt.callLater(function () { reminderProc.destroy() })
+      onExited: {
+        root.liveReminders = Math.max(0, root.liveReminders - 1)
+        Qt.callLater(function () { reminderProc.destroy() })
+      }
+
+      // An unanswered reminder lets go after a while: the popup stays with
+      // the notification server, only the wait for a click ends.
+      property Timer lifetime: Timer {
+        interval: root.reminderLifetimeMs
+        running: reminderProc.running
+        onTriggered: reminderProc.running = false
+      }
     }
   }
 
@@ -325,7 +387,7 @@ Panel {
           // calendar through Olook and cannot on its own.
           root.trouble = String(procErr.text || "").trim()
             || "The calendar is read through Olook, which is not installed: "
-               + "omarchy plugin add https://github.com/TiniTinyTerminator/olook.git"
+               + "omarchy plugin add https://github.com/TiniTinyTerminator/Olook.git"
           Qt.callLater(function () { proc.destroy() })
           return
         }

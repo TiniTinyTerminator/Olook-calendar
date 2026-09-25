@@ -6,7 +6,7 @@ out like the clock's — the date, the year's progress, a month with ISO week
 numbers — with the days you have something on marked, the coming week listed
 underneath, and a notification before each appointment starts.
 
-It reads your calendars through [Olook](https://github.com/TiniTinyTerminator/olook),
+It reads your calendars through [Olook](https://github.com/TiniTinyTerminator/Olook),
 so it shows whatever Olook has: Google, Microsoft, any CalDAV server, and
 `.ics` files or links. Clicking an appointment opens it in a window of its own.
 
@@ -22,8 +22,8 @@ The screenshots are demo data.
 Olook first, then this:
 
 ```bash
-omarchy plugin add https://github.com/TiniTinyTerminator/olook.git --enable
-omarchy plugin add https://github.com/TiniTinyTerminator/olook-calendar.git
+omarchy plugin add https://github.com/TiniTinyTerminator/Olook.git --enable
+omarchy plugin add https://github.com/TiniTinyTerminator/Olook-calendar.git
 ```
 
 To have it take the clock's place:

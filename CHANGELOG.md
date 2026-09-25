@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2
+
+**Security**
+- Reminders are bounded. Each was a notify-send process living until its
+  popup was answered, one per appointment, so a published calendar with
+  hundreds of appointments in the next hour started hundreds of processes and
+  popups. Now at most three wait at once, appointments due together become one
+  summary ("200 appointments starting soon"), each reminder lets go after ten
+  minutes, and the record of reminders already given no longer grows forever.
+
 ## 1.0.1
 
 - Appointment titles and places, which come from whoever published the
