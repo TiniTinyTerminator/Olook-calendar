@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.3
+
+**Security**
+- Reading the calendar is bounded. The whole answer from Olook was collected
+  and parsed with no limit on its size or on how long it could take, so a
+  very large calendar could swell the shell and a read that never finished
+  left the widget "loading" for good. Now Olook is asked for at most 1500
+  appointments with long text cut (Olook 1.2.2 or later; an older Olook is
+  asked the old way), an answer over 8 MB is not parsed, and a read that
+  takes more than 30 seconds is ended and tried again later.
+
 ## 1.0.2
 
 **Security**

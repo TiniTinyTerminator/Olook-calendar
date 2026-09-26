@@ -351,10 +351,15 @@ Panel {
     if (today < from) from = today
     if (ahead > to) to = ahead
     root.loading = true
-    var process = readerComponent.createObject(root, {
-      command: [root.cliPath, "--json", "calendar",
-                "--start", root.dayKey(from), "--end", root.dayKey(to)]
-    })
+    var command = [root.cliPath, "--json", "calendar",
+                   "--start", root.dayKey(from), "--end", root.dayKey(to)]
+    // Bounded: a calendar someone else publishes decides how much comes
+    // back, and this widget lives in the shell for the whole session. Olook
+    // before 1.2.2 does not know these options; readerComponent retries
+    // without them.
+    if (root.boundedReads)
+      command = command.concat(["--max-events", String(root.maxEvents), "--brief"])
+    var process = readerComponent.createObject(root, { command: command })
     if (!process) {
       root.loading = false
       root.trouble = "Could not start the calendar engine."
@@ -362,6 +367,15 @@ Panel {
     }
     process.running = true
   }
+
+  // How much one read may bring back, and how long it may take. Olook caps
+  // the answer itself (--max-events, --brief); the size check here is the
+  // backstop, and the deadline ends a read that never finishes, which would
+  // otherwise leave "loading" set and every later read returning early.
+  readonly property int maxEvents: 1500
+  readonly property int maxAnswerChars: 8 * 1024 * 1024
+  readonly property int readDeadlineMs: 30000
+  property bool boundedReads: true
 
   // A process per read, made when the read starts, which is how Olook's own
   // engine calls have always worked. A single Process declared here did
@@ -377,11 +391,39 @@ Panel {
       stdout: StdioCollector { id: procOut; waitForEnd: true }
       stderr: StdioCollector { id: procErr; waitForEnd: true }
 
+      property bool timedOut: false
+
+      property Timer deadline: Timer {
+        interval: root.readDeadlineMs
+        running: proc.running
+        onTriggered: {
+          proc.timedOut = true
+          proc.running = false
+        }
+      }
+
       onExited: function (exitCode) {
         root.loading = false
+        if (proc.timedOut) {
+          root.trouble = "The calendar took too long to answer; trying again later."
+          Qt.callLater(function () { proc.destroy() })
+          return
+        }
+        var text = String(procOut.text || "")
+        if (text.length > root.maxAnswerChars) {
+          root.trouble = "The calendar answered with more than this widget reads."
+          Qt.callLater(function () { proc.destroy() })
+          return
+        }
+        // An Olook from before --max-events: ask again the old way.
+        if (root.boundedReads && String(procErr.text || "").indexOf("unrecognized arguments") !== -1) {
+          root.boundedReads = false
+          Qt.callLater(function () { proc.destroy(); root.reload() })
+          return
+        }
         var payload = null
         try {
-          payload = JSON.parse(String(procOut.text || ""))
+          payload = JSON.parse(text)
         } catch (error) {
           // Nothing at all back is the engine missing: this widget reads the
           // calendar through Olook and cannot on its own.
