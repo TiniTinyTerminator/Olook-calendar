@@ -19,11 +19,15 @@ The screenshots are demo data.
 
 ## Install
 
-Olook first, then this:
+```bash
+omarchy plugin add https://github.com/TiniTinyTerminator/Olook-calendar.git
+```
+
+On its own it is a clock with the month and the year's progress. Your
+appointments come from Olook; install it as well to see them:
 
 ```bash
 omarchy plugin add https://github.com/TiniTinyTerminator/Olook.git --enable
-omarchy plugin add https://github.com/TiniTinyTerminator/Olook-calendar.git
 ```
 
 To have it take the clock's place:

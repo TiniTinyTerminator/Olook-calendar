@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.5
+
+- Without Olook the widget is a clock with the month and the year's
+  progress, and says quietly where appointments would come from. Before, it
+  showed the shell's "No such file or directory" in red.
+
 ## 1.0.4
 
 **Security**

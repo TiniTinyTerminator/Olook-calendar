@@ -49,6 +49,9 @@ Panel {
   property var events: []
   property bool loading: false
   property string trouble: ""
+  // No Olook beside this plugin. The clock and the month work without it;
+  // only the appointments come from Olook, so this is a hint, not an error.
+  property bool olookMissing: false
 
   // The month on show in the popup, and the day picked out of it.
   property int viewYear: now.getFullYear()
@@ -439,6 +442,14 @@ Panel {
 
       onExited: function (exitCode) {
         root.loading = false
+        // 127: the engine is not there to run -- Olook is not installed.
+        root.olookMissing = exitCode === 127
+        if (root.olookMissing) {
+          root.trouble = ""
+          root.events = []
+          Qt.callLater(function () { proc.destroy() })
+          return
+        }
         // 124: timeout ended the engine; 137: it had to be killed as well.
         if (proc.timedOut || exitCode === 124 || exitCode === 137) {
           root.trouble = "The calendar took too long to answer; trying again later."
@@ -463,12 +474,9 @@ Panel {
         try {
           payload = JSON.parse(text)
         } catch (error) {
-          // Nothing at all back is the engine missing: this widget reads the
-          // calendar through Olook and cannot on its own.
           // One line of the engine's complaint, not all of it.
           root.trouble = String(procErr.text || "").trim().split("\n")[0].slice(0, 200)
-            || "The calendar is read through Olook, which is not installed: "
-               + "omarchy plugin add https://github.com/TiniTinyTerminator/Olook.git"
+            || "Olook did not answer with a calendar."
           Qt.callLater(function () { proc.destroy() })
           return
         }
@@ -1054,8 +1062,12 @@ Panel {
               width: parent.width
               visible: root.trouble === "" && root.agendaRows.length === 0
               textFormat: Text.PlainText
-              text: root.loading ? "Reading the calendar…"
+              text: root.olookMissing
+                ? "Appointments come from Olook, which is not installed:\n"
+                  + "omarchy plugin add https://github.com/TiniTinyTerminator/Olook.git --enable"
+                : root.loading ? "Reading the calendar…"
                 : (root.selectedDay !== "" ? "Nothing on that day" : "Nothing coming up")
+              wrapMode: Text.Wrap
               color: root.faint
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
