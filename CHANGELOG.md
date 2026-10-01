@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The agenda's default length is seven days everywhere; the settings form
+  said two while the widget used seven.
+
 ## 1.0.5
 
 - Without Olook the widget is a clock with the month and the year's

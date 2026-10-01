@@ -64,7 +64,7 @@
         "min": 1,
         "max": 7,
         "step": 1,
-        "defaultValue": 2
+        "defaultValue": 7
       },
       {
         "key": "remindMinutes",
