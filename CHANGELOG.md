@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.6
 
 - The agenda's default length is seven days everywhere; the settings form
   said two while the widget used seven.
